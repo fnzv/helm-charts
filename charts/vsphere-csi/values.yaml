@@ -56,24 +56,23 @@ global:
       # settings for using k8s secret
       #secretName: vsphere-cloud-secret
       #secretNamespace: kube-system
-      #cluster-id: your-unique-cluster-id
+      cluster-id: your-cluster-id
     # vcenter section
 ## @param global.config.vcenter vCenter-specifc confguration
 
-    vcenter: {}
-      # your-vcenter-name-here:
-      #   server: 10.0.0.1
-      #   user: use-your-vcenter-user-here
-      #   password: use-your-vcenter-password-here
-      #   datacenters:
-      #     - hrwest
-      #     - hreast
+    vcenter:
+       vcenter001:
+         server: your.vcenter.example.com
+         user: administrator@vsphere.local
+         password: yourpassword
+         datacenters:
+           - yourdc
       # could-be-a-tenant-label:
       #   server: 1.2.3.4
       #   datacenters:
       #     - mytenantdc
-      #   secretName: cpi-engineering-secret
-      #   secretNamespace: kube-system
+         secretName: vmware-csi-vsphere-csi
+         secretNamespace: default
     # labels for regions and zones
 ## @param global.config.labels Used to configure Toplogy-awareness
 
@@ -161,7 +160,7 @@ controller:
   ## @param controller.name name used for the deployment, if unset defaults to "{{ template "common.names.fullname" . }}"
   name: vsphere-csi-controller
   ## @param controller.config block to freely define options for the controller configmap
-  ## see https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/61d981a1a1641693a2a6727e1994c82d26fed14b/pkg/csi/service/common/constants.go#L258 
+  ## see https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/61d981a1a1641693a2a6727e1994c82d26fed14b/pkg/csi/service/common/constants.go#L258
   config:
     csi-migration: false
     csi-auth-check: true
@@ -253,7 +252,6 @@ controller:
     ## @param controller.resizer.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=4"
       - "--timeout=300s"
       - "--handle-volume-inuse-error=false"
       - "--csi-address=$(ADDRESS)"
@@ -379,7 +377,6 @@ controller:
     ## @param controller.attacher.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=4"
       - "--timeout=300s"
       - "--csi-address=$(ADDRESS)"
       - "--leader-election"
@@ -745,7 +742,6 @@ controller:
     ## @param controller.provisioner.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=4"
       - "--timeout=300s"
       - "--csi-address=$(ADDRESS)"
       - "--kube-api-qps=100"
@@ -834,10 +830,10 @@ controller:
   ## @skip controller.livenessProbe.successThreshold Success threshold for livenessProbe
   ##
   livenessProbe:
-    enabled: true
+    enabled: false
     httpGet:
       path: /healthz
-      port: healthz
+      port: 8082
     initialDelaySeconds: 25
     periodSeconds: 5
     timeoutSeconds: 3
@@ -1080,7 +1076,7 @@ snapshotwebhook:
     enabled: false
     httpGet:
       path: /healthz
-      port: healthz
+      port: 8082
     initialDelaySeconds: 25
     periodSeconds: 5
     timeoutSeconds: 3
@@ -1283,7 +1279,7 @@ node:
   image:
     registry: gcr.io
     repository: cloud-provider-vsphere/csi/release/driver
-    tag: v2.4.0
+    tag: v2.1.0
     ## Specify a imagePullPolicy
     ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
     ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -1355,9 +1351,10 @@ node:
     ## @param node.registrar.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=5"
       - "--csi-address=$(ADDRESS)"
       - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+      - "--health-port=9809"
+      - "--v=5"
     ## @param node.registrar.extraEnvVars Array with extra environment variables to add to node.registrar nodes
     ## e.g:
     ## extraEnvVars:
@@ -1391,13 +1388,27 @@ node:
     ## @skip node.registrar.livenessProbe.successThreshold Success threshold for livenessProbe
     ##
     livenessProbe:
-      enabled: true
+      enabled: false
       exec:
         command:
         - /csi-node-driver-registrar
         - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.vsphere.vmware.com/csi.sock
-        - --mode=kubelet-registration-probe
-      initialDelaySeconds: 3
+      initialDelaySeconds: 1
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+    #livenessProbe:
+    #  enabled: true
+    #  httpGet:
+    #    path: /healthz
+    #    port: healthz
+    #initialDelaySeconds: 1
+    #periodSeconds: 5
+    #timeoutSeconds: 5
+    #failureThreshold: 3
+    #successThreshold: 1
+    #initialDelaySeconds: 3
       #periodSeconds: bar
       #timeoutSeconds: 5
       #failureThreshold: bar
@@ -1420,9 +1431,19 @@ node:
       successThreshold: foo
     ## @param node.registrar.customLivenessProbe Custom livenessProbe that overrides the default one
     ##
-    customLivenessProbe: {}
+    customLivenessProbe:
     ## @param node.registrar.customReadinessProbe Custom readinessProbe that overrides the default one
     ##
+      httpGet:
+        path: /healthz
+        port: 9809
+      initialDelaySeconds: 1
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      initialDelaySeconds: 3
+
     customReadinessProbe: {}
     ## @param node.registrar.extraVolumeMounts Optionally specify extra list of additional volumeMounts for the node.registrar container(s)
     ##
@@ -1480,7 +1501,6 @@ node:
     ## @param node.livenessprobe.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=4"
       - "--csi-address=/csi/csi.sock"
     ## @param node.livenessprobe.extraEnvVars Array with extra environment variables to add to node.livenessprobes nodes
     ## e.g:
@@ -1635,7 +1655,6 @@ node:
   args:
     - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
     - "--fss-namespace=$(CSI_NAMESPACE)"
-    - "--use-gocsi=false"
   ## @param node.hostAliases node pods host aliases
   ## https://kubernetes.io/docs/concepts/services-networking/add-entries-to-pod-etc-hosts-with-host-aliases/
   ##
@@ -1844,7 +1863,7 @@ winnode:
     ## @param winnode.registrar.args Override default container args (useful when using custom images)
     ##
     args:
-      - "--v=5"
+      - "--v=4"
       - "--csi-address=$(ADDRESS)"
       - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
     ## @param winnode.registrar.extraEnvVars Array with extra environment variables to add to winnode.registrar nodes
@@ -1884,8 +1903,7 @@ winnode:
       exec:
         command:
         - /csi-node-driver-registrar
-        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.vsphere.vmware.com/csi.sock
-        - --mode=kubelet-registration-probe
+
       initialDelaySeconds: 3
       #periodSeconds: bar
       #timeoutSeconds: 5
@@ -1968,9 +1986,7 @@ winnode:
     command: []
     ## @param winnode.livenessprobe.args Override default container args (useful when using custom images)
     ##
-    args:
-      - "--v=4"
-      - "--csi-address=/csi/csi.sock"
+    args: "--csi-address=/csi/csi.sock"
     ## @param winnode.livenessprobe.extraEnvVars Array with extra environment variables to add to winnode.livenessprobes nodes
     ## e.g:
     ## extraEnvVars:
@@ -2046,15 +2062,15 @@ winnode:
   ## @param winnode.livenessProbe.timeoutSeconds Timeout seconds for livenessProbe
   ## @param winnode.livenessProbe.failureThreshold Failure threshold for livenessProbe
   ##
-  livenessProbe:
-    enabled: true
-    httpGet:
-      path: /healthz
-      port: healthz
-    initialDelaySeconds: 10
-    periodSeconds: 5
-    timeoutSeconds: 5
-    failureThreshold: 3
+  #livenessProbe:
+  #  enabled: false
+  #  httpGet:
+  #    path: /healthz
+  #    port: 9809
+  #  initialDelaySeconds: 10
+  #  periodSeconds: 5
+  #  timeoutSeconds: 5
+  #  failureThreshold: 3
     #successThreshold: foo
   ## @param winnode.readinessProbe.enabled Enable readinessProbe on node nodes
   ## @param winnode.readinessProbe.initialDelaySeconds Initial delay seconds for readinessProbe
@@ -2124,7 +2140,6 @@ winnode:
   args:
     - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
     - "--fss-namespace=$(CSI_NAMESPACE)"
-    - "--use-gocsi=false"
   ## @param winnode.hostAliases node pods host aliases
   ## https://kubernetes.io/docs/concepts/services-networking/add-entries-to-pod-etc-hosts-with-host-aliases/
   ##
@@ -2296,7 +2311,7 @@ webhook:
     enabled: false
     httpGet:
       path: /healthz
-      port: healthz
+      port: 8082
     initialDelaySeconds: 10
     periodSeconds: 5
     timeoutSeconds: 5
